@@ -18,8 +18,9 @@ class CustomDataset(Dataset):
         files, 
         csv_feature_dict, 
         label_encoder,
-        labels=None, 
-        mode='train'
+        labels=None,
+        transforms=None,
+        mode='train',
     ):
         self.mode = mode
         self.files = files
@@ -33,6 +34,8 @@ class CustomDataset(Dataset):
         self.max_len = 24 * 6
         
         self.label_encoder = label_encoder
+        
+        self.transforms = transforms
 
     def __len__(self):
         return len(self.files)
@@ -64,9 +67,10 @@ class CustomDataset(Dataset):
         # image
         image_path = f'{file}/{file_name}.jpg'
         img = cv2.imread(image_path)
-        img = cv2.resize(img, dsize=(256, 256), interpolation=cv2.INTER_AREA)
-        img = img.astype(np.float32) / 255
-        img = np.transpose(img, (2, 0, 1))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        if self.transforms is not None:
+            img = self.transforms(image=img)['image']
         
         if self.mode == 'train':
             json_path = f'{file}/{file_name}.json'
@@ -79,13 +83,13 @@ class CustomDataset(Dataset):
             label = f'{crop}_{disease}_{risk}'
             
             return {
-                'img': torch.tensor(img, dtype=torch.float32),
+                'img': img,
                 'csv_feature': torch.tensor(csv_feature, dtype=torch.float32),
                 'label': torch.tensor(self.label_encoder[label], dtype=torch.long)
             }
         else:
             return {
-                'img': torch.tensor(img, dtype=torch.float32),
+                'img': img,
                 'csv_feature': torch.tensor(csv_feature, dtype=torch.float32)
             }
 
@@ -98,6 +102,9 @@ class CustomDataModule(LightningDataModule):
         test=None,
         csv_feature_dict=None,
         label_encoder=None,
+        train_transforms=None,
+        val_transforms=None,
+        predict_transforms=None,
         num_workers=32,
         batch_size=8,
     ):
@@ -109,6 +116,9 @@ class CustomDataModule(LightningDataModule):
         self.label_encoder = label_encoder
         assert self.csv_feature_dict is not None
         assert self.label_encoder is not None
+        self.train_transforms = train_transforms
+        self.val_transforms = val_transforms
+        self.predict_transforms = predict_transforms
         self.num_workers = num_workers
         self.batch_size = batch_size
 
@@ -117,16 +127,19 @@ class CustomDataModule(LightningDataModule):
             self.train, 
             self.csv_feature_dict,
             self.label_encoder,
+            transfroms=self.train_transforms,
         )
         self.valid_dataset = CustomDataset(
             self.val, 
             self.csv_feature_dict,
             self.label_encoder,
+            transforms=self.train_transforms,
         )
         self.predict_dataset = CustomDataset(
             self.test, 
             self.csv_feature_dict,
             self.label_encoder,
+            transforms=self.predict_transforms,
             mode='test'
         )
 
