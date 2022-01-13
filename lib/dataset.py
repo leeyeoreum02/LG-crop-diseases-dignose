@@ -127,7 +127,7 @@ class CustomDataModule(LightningDataModule):
             self.train, 
             self.csv_feature_dict,
             self.label_encoder,
-            transfroms=self.train_transforms,
+            transforms=self.train_transforms,
         )
         self.valid_dataset = CustomDataset(
             self.val, 

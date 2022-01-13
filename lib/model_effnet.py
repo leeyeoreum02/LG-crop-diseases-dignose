@@ -15,45 +15,39 @@ def accuracy_function(real, pred):
     return score
 
 
-class Effnetb0_Encoder(nn.Module):
-    def __init__(self):
-        super(Effnetb0_Encoder, self).__init__()
-        self.model = efficientnet_b0(pretrained=True)
-    
-    def forward(self, inputs):
-        output = self.model(inputs)
-        return output
-    
-    
-class Effnetb3_Encoder(nn.Module):
-    def __init__(self):
-        super(Effnetb3_Encoder, self).__init__()
-        self.model = efficientnet_b3(pretrained=True)
-    
-    def forward(self, inputs):
-        output = self.model(inputs)
-        return output
-    
+class BaseEncoder(nn.Module):
+    def __init__(self, model):
+        super(BaseEncoder, self).__init__()
+        self.model = model
 
-class Effnetb7_Encoder(nn.Module):
-    def __init__(self):
-        super(Effnetb7_Encoder, self).__init__()
-        self.model = efficientnet_b7(pretrained=True)
-    
     def forward(self, inputs):
         output = self.model(inputs)
         return output
-    
-    
-class Effnetb7NS_Encoder(nn.Module):
+
+
+class Effnetb0_Encoder(BaseEncoder):
     def __init__(self):
-        super(Effnetb7NS_Encoder, self).__init__()
-        self.model = tf_efficientnet_b7_ns(pretrained=True)
-        
-    def forward(self, inputs):
-        output = self.model(inputs)
-        return output
+        model = efficientnet_b0(pretrained=True)
+        super(Effnetb0_Encoder, self).__init__(model)
     
+    
+class Effnetb3_Encoder(BaseEncoder):
+    def __init__(self):
+        model = efficientnet_b3(pretrained=True)
+        super(Effnetb3_Encoder, self).__init__(model)
+
+
+class Effnetb7_Encoder(BaseEncoder):
+    def __init__(self):
+        model = efficientnet_b7(pretrained=True)
+        super(Effnetb7_Encoder, self).__init__(model)
+    
+    
+class Effnetb7NS_Encoder(BaseEncoder):
+    def __init__(self):
+        model = tf_efficientnet_b7_ns(pretrained=True)
+        super(Effnetb7NS_Encoder, self).__init__(model)
+
     
 class LSTM_Decoder(nn.Module):
     def __init__(self, max_len, embedding_dim, num_features, class_n, rate):
@@ -71,99 +65,23 @@ class LSTM_Decoder(nn.Module):
         fc_input = concat
         output = self.dropout((self.final_layer(fc_input)))
         return output
-
-
-class Effnetb02LSTMModel(LightningModule):
+    
+    
+class BaseModel(LightningModule):
     def __init__(
         self,
-        max_len, 
-        embedding_dim, 
-        num_features, 
-        class_n, 
-        rate=0.1,
+        cnn,
+        rnn,
+        criterion,
         learning_rate=5e-4,
     ):
-        super().__init__()
+        super(BaseModel, self).__init__()
         
-        self.cnn = Effnetb0_Encoder()
-        self.rnn = LSTM_Decoder(max_len, embedding_dim, num_features, class_n, rate)
-        
+        self.cnn = cnn
+        self.rnn = rnn
         self.learning_rate = learning_rate
-        self.criterion = nn.CrossEntropyLoss()
-
-    def configure_optimizers(self):
-        return optim.Adam(self.parameters(), lr=self.learning_rate)
-
-    def forward(self, img, seq):
-        cnn_output = self.cnn(img)
-        output = self.rnn(cnn_output, seq)
+        self.criterion = criterion
         
-        return output
-
-    def training_step(self, batch, batch_idx):
-        img = batch['img']
-        csv_feature = batch['csv_feature']
-        label = batch['label']
-        
-        output = self(img, csv_feature)
-        loss = self.criterion(output, label)
-        score = accuracy_function(label, output)
-        
-        self.log(
-            'train_loss', loss, prog_bar=True, logger=True
-        )
-        self.log(
-            'train_score', score, prog_bar=True, logger=True
-        )
-        
-        return {'loss': loss, 'train_score': score}
-
-    def validation_step(self, batch, batch_idx):
-        img = batch['img']
-        csv_feature = batch['csv_feature']
-        label = batch['label']
-        
-        output = self(img, csv_feature)
-        loss = self.criterion(output, label)
-        score = accuracy_function(label, output)
-        
-        self.log(
-            'val_loss', loss, prog_bar=True, logger=True
-        )
-        self.log(
-            'val_score', score, prog_bar=True, logger=True
-        )
-        
-        return {'val_loss': loss, 'val_score': score}
-    
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        img = batch['img']
-        seq = batch['csv_feature']
-        
-        output = self(img, seq)
-        output = torch.argmax(output, dim=1)
-        
-        return output
-    
-    
-class Effnetb32LSTMModel(LightningModule):
-    def __init__(
-        self,
-        max_len, 
-        embedding_dim, 
-        num_features, 
-        class_n, 
-        rate=0.1,
-        learning_rate=5e-4,
-    ):
-        super().__init__()
-        
-        self.cnn = Effnetb3_Encoder()
-        self.rnn = LSTM_Decoder(max_len, embedding_dim, num_features, class_n, rate)
-        
-        self.learning_rate = learning_rate
-        self.criterion = nn.CrossEntropyLoss()
-
     def configure_optimizers(self):
         return optim.Adam(self.parameters(), lr=self.learning_rate)
 
@@ -219,7 +137,7 @@ class Effnetb32LSTMModel(LightningModule):
         return output
 
 
-class Effnetb72LSTMModel(LightningModule):
+class Effnetb02LSTMModel(BaseModel):
     def __init__(
         self,
         max_len, 
@@ -228,71 +146,16 @@ class Effnetb72LSTMModel(LightningModule):
         class_n, 
         rate=0.1,
         learning_rate=5e-4,
-    ):
-        super().__init__()
+    ):  
+        cnn = Effnetb0_Encoder()
+        rnn = LSTM_Decoder(max_len, embedding_dim, num_features, class_n, rate)
         
-        self.cnn = Effnetb7_Encoder()
-        self.rnn = LSTM_Decoder(max_len, embedding_dim, num_features, class_n, rate)
+        criterion = nn.CrossEntropyLoss()
         
-        self.learning_rate = learning_rate
-        self.criterion = nn.CrossEntropyLoss()
+        super(Effnetb02LSTMModel, self).__init__(cnn, rnn, criterion, learning_rate)
 
-    def configure_optimizers(self):
-        return optim.Adam(self.parameters(), lr=self.learning_rate)
 
-    def forward(self, img, seq):
-        cnn_output = self.cnn(img)
-        output = self.rnn(cnn_output, seq)
-        
-        return output
-
-    def training_step(self, batch, batch_idx):
-        img = batch['img']
-        csv_feature = batch['csv_feature']
-        label = batch['label']
-        
-        output = self(img, csv_feature)
-        loss = self.criterion(output, label)
-        score = accuracy_function(label, output)
-        
-        self.log(
-            'train_loss', loss, prog_bar=True, logger=True
-        )
-        self.log(
-            'train_score', score, prog_bar=True, logger=True
-        )
-        
-        return {'loss': loss, 'train_score': score}
-
-    def validation_step(self, batch, batch_idx):
-        img = batch['img']
-        csv_feature = batch['csv_feature']
-        label = batch['label']
-        
-        output = self(img, csv_feature)
-        loss = self.criterion(output, label)
-        score = accuracy_function(label, output)
-        
-        self.log(
-            'val_loss', loss, prog_bar=True, logger=True
-        )
-        self.log(
-            'val_score', score, prog_bar=True, logger=True
-        )
-        
-        return {'val_loss': loss, 'val_score': score}
-    
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        img = batch['img']
-        seq = batch['csv_feature']
-        
-        output = self(img, seq)
-        output = torch.argmax(output, dim=1)
-        
-        return output
-    
-    
-class Effnetb7NS2LSTMModel(LightningModule):
+class Effnetb32LSTMModel(BaseModel):
     def __init__(
         self,
         max_len, 
@@ -301,65 +164,46 @@ class Effnetb7NS2LSTMModel(LightningModule):
         class_n, 
         rate=0.1,
         learning_rate=5e-4,
-    ):
-        super().__init__()
+    ):  
+        cnn = Effnetb3_Encoder()
+        rnn = LSTM_Decoder(max_len, embedding_dim, num_features, class_n, rate)
         
-        self.cnn = Effnetb7NS_Encoder()
-        self.rnn = LSTM_Decoder(max_len, embedding_dim, num_features, class_n, rate)
+        criterion = nn.CrossEntropyLoss()
         
-        self.learning_rate = learning_rate
-        self.criterion = nn.CrossEntropyLoss()
+        super(Effnetb32LSTMModel, self).__init__(cnn, rnn, criterion, learning_rate)
 
-    def configure_optimizers(self):
-        return optim.Adam(self.parameters(), lr=self.learning_rate)
 
-    def forward(self, img, seq):
-        cnn_output = self.cnn(img)
-        output = self.rnn(cnn_output, seq)
+class Effnetb72LSTMModel(BaseModel):
+    def __init__(
+        self,
+        max_len, 
+        embedding_dim, 
+        num_features, 
+        class_n, 
+        rate=0.1,
+        learning_rate=5e-4,
+    ):  
+        cnn = Effnetb7_Encoder()
+        rnn = LSTM_Decoder(max_len, embedding_dim, num_features, class_n, rate)
         
-        return output
-
-    def training_step(self, batch, batch_idx):
-        img = batch['img']
-        csv_feature = batch['csv_feature']
-        label = batch['label']
+        criterion = nn.CrossEntropyLoss()
         
-        output = self(img, csv_feature)
-        loss = self.criterion(output, label)
-        score = accuracy_function(label, output)
+        super(Effnetb72LSTMModel, self).__init__(cnn, rnn, criterion, learning_rate)
         
-        self.log(
-            'train_loss', loss, prog_bar=True, logger=True
-        )
-        self.log(
-            'train_score', score, prog_bar=True, logger=True
-        )
-        
-        return {'loss': loss, 'train_score': score}
-
-    def validation_step(self, batch, batch_idx):
-        img = batch['img']
-        csv_feature = batch['csv_feature']
-        label = batch['label']
-        
-        output = self(img, csv_feature)
-        loss = self.criterion(output, label)
-        score = accuracy_function(label, output)
-        
-        self.log(
-            'val_loss', loss, prog_bar=True, logger=True
-        )
-        self.log(
-            'val_score', score, prog_bar=True, logger=True
-        )
-        
-        return {'val_loss': loss, 'val_score': score}
     
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        img = batch['img']
-        seq = batch['csv_feature']
+class Effnetb7NS2LSTMModel(BaseModel):
+    def __init__(
+        self,
+        max_len, 
+        embedding_dim, 
+        num_features, 
+        class_n, 
+        rate=0.1,
+        learning_rate=5e-4,
+    ):  
+        cnn = Effnetb7NS_Encoder()
+        rnn = LSTM_Decoder(max_len, embedding_dim, num_features, class_n, rate)
         
-        output = self(img, seq)
-        output = torch.argmax(output, dim=1)
+        criterion = nn.CrossEntropyLoss()
         
-        return output
+        super(Effnetb7NS2LSTMModel, self).__init__(cnn, rnn, criterion, learning_rate)

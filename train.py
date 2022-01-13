@@ -16,7 +16,7 @@ from lib.utils import split_data, initialize
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description='Training Effnetb02LSTM')
+    parser = argparse.ArgumentParser(description='Training Effnet2LSTM')
     parser.add_argument('--image_size', type=int, default=256)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--max_epochs', type=int, default=10)
@@ -131,7 +131,7 @@ def main():
     
     args = get_args()
     
-    train('effnetb7ns-lstm', args, csv_feature_dict, label_encoder, seed)
+    train('effnetb7ns-lstm-512', args, csv_feature_dict, label_encoder, seed)
 
 
 if __name__ == '__main__':
