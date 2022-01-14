@@ -262,7 +262,7 @@ def main():
     #     train_fold(f'effnetb7ns-w{args.width}-h{args.height}-f{fold}', fold, args)
     for fold in range(k):
         train_fold_v2(
-            f'effnetb7ns-w{args.width}-h{args.height}-f{fold}', 
+            f'effnetb7ns-lstm-w{args.width}-h{args.height}-f{fold}', 
             fold, args, csv_feature_dict, label_encoder
         )
 
