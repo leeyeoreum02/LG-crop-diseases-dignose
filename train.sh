@@ -1,0 +1,1 @@
+python train.py --width 512 --height 384 --batch_size 28 --max_epochs 50 --num_workers 32

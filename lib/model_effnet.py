@@ -5,6 +5,7 @@ from torch import nn, optim
 from torchvision.models import efficientnet_b0, efficientnet_b7
 from torchvision.models import efficientnet_b3
 from pytorch_lightning import LightningModule
+import timm
 from timm.models.efficientnet import tf_efficientnet_b7_ns
 
 
@@ -65,6 +66,77 @@ class LSTM_Decoder(nn.Module):
         fc_input = concat
         output = self.dropout((self.final_layer(fc_input)))
         return output
+    
+    
+class BaseImageModel(LightningModule):
+    def __init__(
+        self,
+        model_name,
+        criterion,
+        learning_rate=5e-4,
+    ):
+        super(BaseImageModel, self).__init__()
+        
+        # !FIXME: Should I add num_classes in create_model and remove self.classifier??
+        self.model = timm.create_model(model_name, pretrained=True)
+        self.classifier = nn.Linear(1000, 25)
+        self.learning_rate = learning_rate
+        self.criterion = criterion
+        
+    def configure_optimizers(self):
+        return optim.Adam(self.parameters(), lr=self.learning_rate)
+
+    def forward(self, x):
+        x = self.model(x)
+        x = self.classifier(x)
+        return x
+
+    def training_step(self, batch, batch_idx):
+        image, label = batch
+        
+        output = self(image)
+        loss = self.criterion(output, label)
+        score = accuracy_function(label, output)
+        
+        self.log(
+            'train_loss', loss, prog_bar=True, logger=True
+        )
+        self.log(
+            'train_score', score, prog_bar=True, logger=True
+        )
+        
+        return {'loss': loss, 'train_score': score}
+
+    def validation_step(self, batch, batch_idx):
+        image, label = batch
+        
+        output = self(image)
+        loss = self.criterion(output, label)
+        score = accuracy_function(label, output)
+        
+        self.log(
+            'val_loss', loss, prog_bar=True, logger=True
+        )
+        self.log(
+            'val_score', score, prog_bar=True, logger=True
+        )
+        
+        return {'val_loss': loss, 'val_score': score}
+    
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        image = batch
+        
+        output = self(image)
+        output = torch.argmax(output, dim=1)
+        
+        return output
+    
+    
+class Effnetb7NS(BaseImageModel):
+    def __init__(self):
+        model_name = 'tf_efficientnet_b7_ns'
+        criterion = nn.CrossEntropyLoss()
+        super(Effnetb7NS, self).__init__(model_name, criterion)
     
     
 class BaseModel(LightningModule):

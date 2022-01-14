@@ -1,12 +1,44 @@
+import os
+import json
 from glob import glob
 
-from tqdm import tqdm
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
+
+
+def get_labels(train_json):
+    crops = []
+    diseases = []
+    risks = []
+    labels = []
+    
+    for i in range(len(train_json)):
+        with open(train_json[i], 'r') as f:
+            sample = json.load(f)
+            crop = sample['annotations']['crop']
+            disease = sample['annotations']['disease']
+            risk = sample['annotations']['risk']
+            label = f"{crop}_{disease}_{risk}"
+        
+            crops.append(crop)
+            diseases.append(disease)
+            risks.append(risk)
+            labels.append(label)
+            
+    label_unique = sorted(np.unique(labels))
+    label_unique = {key: value for key, value in zip(label_unique, range(len(label_unique)))}
+    # print(label_unique)
+
+    labels = [label_unique[k] for k in labels]
+    
+    return labels
 
 
 def split_data(split_rate=0.2, seed=42, mode='train'):
+    """
+    Use for model trained image and time series.
+    """
     if mode == 'train':
         train = sorted(glob('data/train/*'))
         
@@ -22,26 +54,17 @@ def split_data(split_rate=0.2, seed=42, mode='train'):
 
 
 def initialize():
-    csv_features = [
-        '내부 온도 1 평균', '내부 온도 1 최고', '내부 온도 1 최저', '내부 습도 1 평균', '내부 습도 1 최고', 
-        '내부 습도 1 최저', '내부 이슬점 평균', '내부 이슬점 최고', '내부 이슬점 최저'
-    ]
-    csv_files = sorted(glob('data/train/*/*.csv'))
-
-    temp_csv = pd.read_csv(csv_files[0])[csv_features]
-    max_arr, min_arr = temp_csv.max().to_numpy(), temp_csv.min().to_numpy()
-
-    # feature 별 최대값, 최솟값 계산
-    for csv in tqdm(csv_files[1:]):
-        temp_csv = pd.read_csv(csv)[csv_features]
-        temp_csv = temp_csv.replace('-', np.nan).dropna()
-        if len(temp_csv) == 0:
-            continue
-        temp_csv = temp_csv.astype(float)
-        temp_max, temp_min = temp_csv.max().to_numpy(), temp_csv.min().to_numpy()
-        max_arr = np.max([max_arr, temp_max], axis=0)
-        min_arr = np.min([min_arr, temp_min], axis=0)
-    csv_feature_dict = {csv_features[i]: [min_arr[i], max_arr[i]] for i in range(len(csv_features))}
+    csv_feature_dict = {
+        '내부 온도 1 평균': [3.4, 47.3],
+        '내부 온도 1 최고': [3.4, 47.6],
+        '내부 온도 1 최저': [3.3, 47.0],
+        '내부 습도 1 평균': [23.7, 100.0],
+        '내부 습도 1 최고': [25.9, 100.0],
+        '내부 습도 1 최저': [0.0, 100.0],
+        '내부 이슬점 평균': [0.1, 34.5],
+        '내부 이슬점 최고': [0.2, 34.7],
+        '내부 이슬점 최저': [0.0, 34.4]
+    }
     
     crop = {'1': '딸기', '2': '토마토', '3': '파프리카', '4': '오이', '5': '고추', '6': '시설포도'}
     disease = {
@@ -78,6 +101,29 @@ def initialize():
                 label_description[label] = f'{crop[key]}_{disease[key][disease_code]}_{risk[risk_code]}'
                 
     label_encoder = {key: idx for idx, key in enumerate(label_description)}
+    # print(len(label_encoder))
     label_decoder = {val: key for key, val in label_encoder.items()}
     
     return csv_feature_dict, label_encoder, label_decoder
+
+
+def split_kfold(k=5, seed=42, root_path='data', save_name='kfold.csv'):
+    """
+    Use for model trained only image.
+    """
+    train_path = os.path.join(root_path, 'train')
+    idxs = list(range(len(os.listdir(train_path))))
+    
+    train_jpg = sorted(glob(os.path.join(train_path, '*', '*.jpg')))
+    train_json = sorted(glob(os.path.join(train_path, '*', '*.json')))
+    
+    labels = get_labels(train_json)
+    
+    df = pd.DataFrame({'id': idxs})
+    skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=seed)
+    for fold, (_, valid_idx) in enumerate(skf.split(train_jpg, labels)):
+        df.loc[valid_idx, 'kfold'] = int(fold)
+        
+    # print(df['kfold'].value_counts())
+    save_path = os.path.join(root_path, save_name)
+    df.to_csv(save_path, index=False)
