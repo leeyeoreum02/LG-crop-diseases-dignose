@@ -4,9 +4,13 @@ import torch
 from torch import nn, optim
 from torchvision.models import efficientnet_b0, efficientnet_b7
 from torchvision.models import efficientnet_b3
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pytorch_lightning import LightningModule
+from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 import timm
 from timm.models.efficientnet import tf_efficientnet_b7_ns
+
+from lib.loss import FocalLoss
 
 
 def accuracy_function(real, pred):    
@@ -17,9 +21,16 @@ def accuracy_function(real, pred):
 
 
 class BaseEncoder(nn.Module):
-    def __init__(self, model):
+    def __init__(self, model, freeze=False):
         super(BaseEncoder, self).__init__()
         self.model = model
+        
+        if freeze:
+            self.model.eval()
+            # freeze params
+            for param in self.model.parameters():
+                if isinstance(param, nn.BatchNorm2d):
+                    param.requires_grad = False
 
     def forward(self, inputs):
         output = self.model(inputs)
@@ -48,7 +59,17 @@ class Effnetb7NS_Encoder(BaseEncoder):
     def __init__(self):
         model = tf_efficientnet_b7_ns(pretrained=True)
         super(Effnetb7NS_Encoder, self).__init__(model)
-
+        
+        
+class Effnetb7NSPlus_Encoder(BaseEncoder):
+    def __init__(self, drop_path_rate=0.4, drop_rate=0.5):
+        model = tf_efficientnet_b7_ns(
+            pretrained=True,
+            drop_path_rate=drop_path_rate,
+            drop_rate=drop_rate
+        )
+        super(Effnetb7NSPlus_Encoder, self).__init__(model, freeze=True)
+        
     
 class LSTM_Decoder(nn.Module):
     def __init__(self, max_len, embedding_dim, num_features, class_n, rate):
@@ -146,6 +167,9 @@ class BaseModel(LightningModule):
         rnn,
         criterion,
         learning_rate=5e-4,
+        max_epochs=50,
+        is_tta=False,
+        tta_transforms=None,
     ):
         super(BaseModel, self).__init__()
         
@@ -153,9 +177,21 @@ class BaseModel(LightningModule):
         self.rnn = rnn
         self.learning_rate = learning_rate
         self.criterion = criterion
+        self.max_epochs = max_epochs
+        self.is_tta = is_tta
+        self.tta_transforms = tta_transforms
+        
+        # self.automatic_optimization = False
         
     def configure_optimizers(self):
-        return optim.Adam(self.parameters(), lr=self.learning_rate)
+        optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
+        # return optimizer
+        scheduler = LinearWarmupCosineAnnealingLR(
+            optimizer, warmup_epochs=4, max_epochs=self.max_epochs,
+            warmup_start_lr=1e-6, eta_min=1e-6,
+        )
+        # scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2, eta_min=0.001)
+        return [optimizer], [scheduler]
 
     def forward(self, img, seq):
         cnn_output = self.cnn(img)
@@ -179,7 +215,13 @@ class BaseModel(LightningModule):
             'train_score', score, prog_bar=True, logger=True
         )
         
-        return {'loss': loss, 'train_score': score}
+        # sch = self.lr_schedulers()
+        
+        # # step every `n` epochs
+        # if self.trainer.is_last_batch and (self.trainer.current_epoch + 1) % 1 == 0:
+        #     sch.step()
+        
+        return {'loss': loss, 'train_score': score}        
 
     def validation_step(self, batch, batch_idx):
         img = batch['img']
@@ -200,6 +242,12 @@ class BaseModel(LightningModule):
         return {'val_loss': loss, 'val_score': score}
     
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        if self.is_tta:
+            return self._tta_predict_step(batch)
+        else:
+            return self._base_predict_step(batch)
+    
+    def _base_predict_step(self, batch):
         img = batch['img']
         seq = batch['csv_feature']
         
@@ -207,7 +255,27 @@ class BaseModel(LightningModule):
         output = torch.argmax(output, dim=1)
         
         return output
-
+    
+    def _tta_predict_step(self, batch):
+        img = batch['img']
+        seq = batch['csv_feature']
+        
+        for i, transformer in enumerate(self.tta_transforms):
+            augmented_image = transformer.augment_image(img)
+            
+            # pass to model
+            model_output = self(augmented_image, seq)
+            model_output = torch.argmax(model_output, dim=1).unsqueeze(1)
+            
+            if i == 0:
+                outputs = model_output.clone()
+            else:
+                outputs = torch.cat((outputs, model_output), dim=1)
+                        
+        outputs = torch.mode(outputs, dim=1)
+                
+        return outputs
+            
 
 class Effnetb02LSTMModel(BaseModel):
     def __init__(
@@ -279,3 +347,46 @@ class Effnetb7NS2LSTMModel(BaseModel):
         criterion = nn.CrossEntropyLoss()
         
         super(Effnetb7NS2LSTMModel, self).__init__(cnn, rnn, criterion, learning_rate)
+        
+        
+class Effnetb7NSPlus2LSTMModel(BaseModel):
+    def __init__(
+        self,
+        max_len, 
+        embedding_dim, 
+        num_features, 
+        class_n, 
+        rate=0.1,
+        learning_rate=5e-4,
+        max_epochs=50,
+    ):
+        cnn = Effnetb7NSPlus_Encoder()
+        rnn = LSTM_Decoder(max_len, embedding_dim, num_features, class_n, rate)
+        
+        criterion = FocalLoss()
+        # criterion = nn.CrossEntropyLoss()
+        
+        super(Effnetb7NSPlus2LSTMModel, self).__init__(cnn, rnn, criterion, learning_rate, max_epochs)
+        
+
+class Effnetb7NSPlus2LSTMTTAModel(BaseModel):
+    def __init__(
+        self,
+        max_len, 
+        embedding_dim, 
+        num_features, 
+        class_n,
+        tta_transforms,
+        rate=0.1,
+        learning_rate=5e-4,
+        max_epochs=50,
+    ):
+        cnn = Effnetb7NSPlus_Encoder()
+        rnn = LSTM_Decoder(max_len, embedding_dim, num_features, class_n, rate)
+        
+        criterion = FocalLoss()
+        
+        super(Effnetb7NSPlus2LSTMTTAModel, self).__init__(
+            cnn, rnn, criterion, learning_rate, max_epochs,
+            is_tta=True, tta_transforms=tta_transforms
+        )

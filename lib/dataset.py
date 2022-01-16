@@ -46,7 +46,7 @@ class CustomDataset(Dataset):
     
     def __getitem__(self, i):
         file = self.files[i]
-        file_name = file.split('/')[-1]
+        file_name = file.split(os.sep)[-1]
         
         # csv
         if self.csv_feature_check[i] == 0:
