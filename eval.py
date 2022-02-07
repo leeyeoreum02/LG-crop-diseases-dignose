@@ -1,36 +1,39 @@
 import os
 import argparse
-from typing import List
+from typing import Callable, List, Sequence, Dict
 
 import numpy as np
 import pandas as pd
 
 import torch
+from torch import Tensor
 import pytorch_lightning as pl
-from pytorch_lightning.plugins import DDPPlugin
 from pytorch_lightning.utilities.seed import seed_everything
+from pytorch_lightning.callbacks import RichProgressBar
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import ttach as tta
 
-from lib.model_effnet import Effnetb02LSTMModel, Effnetb32LSTMModel, Effnetb7NSPlus2LSTMTTAModel
-from lib.model_effnet import Effnetb72LSTMModel, Effnetb7NS2LSTMModel
-from lib.model_effnet import Effnetb7NS, Effnetb7NSPlus2LSTMModel
-from lib.dataset import CustomDataModule, CustomDataModuleV2
-from lib.utils import split_data, initialize
+from lib import models
+from lib.dataset import CustomDataModule
+from lib.utils import initialize_n25, split_data, initialize
 
 
-def get_args():
-    parser = argparse.ArgumentParser(description='Evaluating Effnet')
+def get_args() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description='Evaluating Model')
+    parser.add_argument('--model_name', type=str)
+    parser.add_argument('--weight_path', type=str)
+    parser.add_argument('--encoding', type=int, default=111)
     parser.add_argument('--width', type=int, default=256)
     parser.add_argument('--height', type=int, default=256)
     parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--num_workers', type=int, default=32)
+    parser.add_argument('--gpus', type=str, default='0')
     args = parser.parse_args()
     return args
 
 
-def get_predict_transforms(height, width):
+def get_predict_transforms(height: int, width: int) -> Sequence[Callable]:
     return A.Compose([
         A.Resize(height=height, width=width),
         A.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
@@ -38,30 +41,20 @@ def get_predict_transforms(height, width):
     ])
     
     
-def get_tta_transforms():
+def get_tta_transforms() -> Sequence[Callable]:
     return tta.Compose([
         tta.HorizontalFlip(),
         tta.Rotate90(angles=[90]),
-        tta.Multiply(factors=[0.9, 1.1]),        
-    ])
+        tta.Multiply(factors=[0.9, 1.1]),
+    ])    
     
     
-def voting_folds(submit_dir, submit_paths: List[os.PathLike], save_name):
-    submit = pd.read_csv(submit_paths[0])
-    for submit_path in submit_paths[1:]:
-        label = pd.read_csv(submit_path)[['label']]
-        submit = pd.concat([submit, label], axis=1)
-    submit['majority'] = submit.mode(axis=1)[0]
-    submit_path = os.path.join(submit_dir, f'middle_{save_name}')
-    submit.to_csv(submit_path, index=False)
-    # submit = submit.iloc[:, [0, -1]]
-    # submit.rename(columns={'majority': 'label'}, inplace=True)
-    
-    # submit_path = os.path.join(submit_dir, save_name)
-    # submit.to_csv(submit_path, index=False)
-    
-    
-def get_submission(outputs, save_dir, save_filename, label_decoder):
+def get_submission(
+    outputs: List[Tensor], 
+    save_dir: os.PathLike, 
+    save_filename: str,
+    label_decoder: Dict[int, str]
+) -> None:
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
         
@@ -75,17 +68,53 @@ def get_submission(outputs, save_dir, save_filename, label_decoder):
     save_file_path = os.path.join(save_dir, save_filename)
     
     submission.to_csv(save_file_path, index=False)
+    
+    
+def get_onehot_submission(
+    outputs: List[Tensor],
+    save_dir: os.PathLike,
+    save_filename: str, 
+    n_class: int
+) -> os.PathLike:
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+        
+    outputs = torch.cat(outputs).detach().cpu().numpy()
+    outputs = pd.DataFrame(outputs, columns=range(n_class))
 
-
+    submission = pd.read_csv('data/sample_submission.csv')
+    submission = pd.concat([submission[['image']], outputs], axis=1)
+    
+    save_file_path = os.path.join(save_dir, save_filename)
+    
+    submission.to_csv(save_file_path, index=False)
+    
+    return save_file_path
+    
+    
+def get_submission_from_onehot(
+    onehot_submit_path: os.PathLike, 
+    save_dir: os.PathLike, 
+    save_filename: str, 
+    label_decoder: Dict[int, str]
+) -> None:
+    submit = pd.read_csv(onehot_submit_path)
+    label = submit.iloc[:, 1:].idxmax(axis=1)
+    label = pd.Series([label_decoder[int(val)] for val in label])
+    submit = pd.concat([submit[['image']], label], axis=1)
+    submit.rename(columns={0: 'label'}, inplace=True)
+    submit_path = os.path.join(save_dir, save_filename)
+    submit.to_csv(submit_path, index=False)
+     
+    
 def eval(
-    ckpt_path, 
-    args, 
-    csv_feature_dict, 
-    label_encoder, 
-    label_decoder,
-    submit_save_dir='submissions',
-    submit_save_name='baseline_submission.csv',
-):
+    args: argparse.ArgumentParser, 
+    csv_feature_dict: Dict[str, List[float]], 
+    label_encoder: Dict[str, int], 
+    label_decoder: Dict[int, str],
+    submit_save_dir: os.PathLike = 'submissions',
+    submit_save_name: str = 'baseline_submission.csv',
+) -> None:
     test_data = split_data(mode='test')
     
     predict_transforms = get_predict_transforms(args.height, args.width)
@@ -99,128 +128,71 @@ def eval(
         batch_size=args.batch_size,
     )
 
-    # model = Effnetb02LSTMModel(
-    #     max_len=24*6, 
-    #     embedding_dim=512, 
-    #     num_features=len(csv_feature_dict), 
-    #     class_n=len(label_encoder), 
-    # )
-
-    # model = Effnetb72LSTMModel(
-    #     max_len=24*6, 
-    #     embedding_dim=512, 
-    #     num_features=len(csv_feature_dict), 
-    #     class_n=len(label_encoder), 
-    # )
+    if 'tta' in args.model_name:
+        model = models.__dict__[args.model_name](
+            max_len=24*6, 
+            embedding_dim=512, 
+            num_features=len(csv_feature_dict), 
+            class_n=len(label_encoder),
+            tta_transforms=get_tta_transforms(),
+            is_onehot=True,
+        )
+    else:
+        model = models.__dict__[args.model_name](
+            max_len=24*6, 
+            embedding_dim=512, 
+            num_features=len(csv_feature_dict), 
+            class_n=len(label_encoder),
+            is_onehot=True,
+        )
     
-    # model = Effnetb7NS2LSTMModel(
-    #     max_len=24*6, 
-    #     embedding_dim=512, 
-    #     num_features=len(csv_feature_dict), 
-    #     class_n=len(label_encoder),
-    # )
+    progress_bar = RichProgressBar()
     
-    model = Effnetb7NSPlus2LSTMModel(
-        max_len=24*6, 
-        embedding_dim=512, 
-        num_features=len(csv_feature_dict), 
-        class_n=len(label_encoder),
-    )
-    
-    # model = Effnetb7NSPlus2LSTMTTAModel(
-    #     max_len=24*6, 
-    #     embedding_dim=512, 
-    #     num_features=len(csv_feature_dict), 
-    #     class_n=len(label_encoder),
-    #     tta_transforms=get_tta_transforms(),
-    # )
+    gpus = list(map(int, args.gpus.split(',')))
 
     trainer = pl.Trainer(
-        # gpus=[0, 1, 2, 3],
-        gpus=1,
+        gpus=gpus,
         # strategy=DDPPlugin(find_unused_parameters=False),
         precision=16,
+        callbacks=[progress_bar],
     )
 
-    ckpt = torch.load(ckpt_path, map_location='cuda:0')
-    model.load_state_dict(ckpt['state_dict'])
-
-    outputs = trainer.predict(model, data_module)
-
-    get_submission(outputs, submit_save_dir, submit_save_name, label_decoder)
-    
-    
-def eval_v2(
-    ckpt_path, 
-    args,
-    submit_save_dir='submissions',
-    submit_save_name='baseline_submission.csv',
-):
-    label_decoder = {
-        0: '1_00_0', 1: '2_00_0', 2: '2_a5_2', 3: '3_00_0', 4: '3_a9_1', 
-        5: '3_a9_2', 6: '3_a9_3', 7: '3_b3_1', 8: '3_b6_1', 9: '3_b7_1', 
-        10: '3_b8_1', 11: '4_00_0', 12: '5_00_0', 13: '5_a7_2', 14: '5_b6_1', 
-        15: '5_b7_1', 16: '5_b8_1', 17: '6_00_0', 18: '6_a11_1', 19: '6_a11_2',
-        20: '6_a12_1', 21: '6_a12_2', 22: '6_b4_1', 23: '6_b4_3', 24: '6_b5_1',
-    }
-    
-    predict_transforms = get_predict_transforms(args.height, args.width)
-    
-    data_module = CustomDataModuleV2(
-        root_path='data',
-        predict_transforms=predict_transforms,
-        num_workers=args.num_workers,
-        batch_size=args.batch_size,
-    )
-    
-    model = Effnetb7NS()
-        
-    trainer = pl.Trainer(
-        # gpus=[0, 1, 2, 3],
-        gpus=[1],
-        strategy=DDPPlugin(find_unused_parameters=False),
-        precision=16,
-    )
-
-    # ckpt = torch.load(ckpt_path, map_location='cuda:1')
-    ckpt = torch.load(ckpt_path)
+    ckpt = torch.load(args.weight_path)
     model.load_state_dict(ckpt['state_dict'])
 
     outputs = trainer.predict(model, data_module)
     
-    get_submission(outputs, submit_save_dir, submit_save_name, label_decoder)
+    save_file_path = get_onehot_submission(
+        outputs, submit_save_dir, submit_save_name, n_class=len(label_encoder))
+    
+    get_submission_from_onehot(
+        save_file_path, submit_save_dir, 
+        f"{'-'.join(submit_save_name.split('-')[:-1])}.csv", label_decoder
+    )
 
 
-def main():
+def main() -> None:
     seed = 42
     seed_everything(seed)
     
-    ckpt_dir = 'weights/effnetb7nsplus-lstm-w512-h512-f0-aug-sch'
-    ckpt_name = 'epoch=94-val_score=0.93.ckpt'
-    ckpt_path = os.path.join(ckpt_dir, ckpt_name)
-    
-    csv_feature_dict, label_encoder, label_decoder = initialize()
-    
     args = get_args()
     
-    submit_save_name = 'effnetb7nsplus-lstm-w512-h512-f0-aug-sch-e93-tw600-th600.csv'
+    if args.encoding == 25:
+        csv_feature_dict, label_encoder, label_decoder = initialize_n25()
+    elif args.encoding == 111:
+        csv_feature_dict, label_encoder, label_decoder = initialize()
+    else:
+        raise Exception("encoding parameter must be '25' or '111'.")
     
-    # eval(
-    #     ckpt_path, args, csv_feature_dict, label_encoder, label_decoder,
-    #     submit_save_name=submit_save_name
-    # )
-    # eval_v2(ckpt_path, args, submit_save_name=submit_save_name)
+    weight_name = args.weight_path.split(os.sep)[1]
+    epoch = args.weight_path.split(os.sep)[-1].split('-')[0].split('=')[-1]
     
-    submit_dir = 'submissions'
-    submit_paths = [
-        'submissions\effnetb7ns-lstm-w512-h512-f1-aug-e38.csv',
-        'submissions\effnetb7nsplus-lstm-w512-h512-f0-aug-sch-e93-tw600-th600.csv',
-        'submissions\effnetb7nsplus-lstm-w512-h512-f1-aug-sch-e55-tw512-th512.csv',
-        'submissions\effnetb7nsplus-lstm-w512-h512-f1-aug-sch-e55-tw600-th600.csv'
-    ]
-    save_name = 'best-4fold.csv'
+    submit_save_name = f'{weight_name}-e{epoch}-tw{args.width}-th{args.height}-onehot.csv'
     
-    voting_folds(submit_dir, submit_paths, save_name)
+    eval(
+        args, csv_feature_dict, label_encoder, label_decoder,
+        submit_save_name=submit_save_name
+    )
 
 
 if __name__ == '__main__':

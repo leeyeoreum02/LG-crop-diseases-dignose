@@ -113,6 +113,8 @@ dependencies:
     - charset-normalizer==2.0.10
     - click==8.0.3
     - cloudpickle==2.0.0
+    - colorama==0.4.4
+    - commonmark==0.9.1
     - configparser==5.2.0
     - cycler==0.11.0
     - docker-pycreds==0.4.0
@@ -154,6 +156,7 @@ dependencies:
     - qudida==0.0.4
     - requests==2.27.1
     - requests-oauthlib==1.3.0
+    - rich==11.0.0
     - rsa==4.8
     - scikit-image==0.19.1
     - scikit-learn==1.0.2
@@ -168,10 +171,12 @@ dependencies:
     - termcolor==1.1.0
     - threadpoolctl==3.0.0
     - tifffile==2021.11.2
+    - timm==0.5.4
     - torch-tb-profiler==0.3.1
     - torchinfo==1.6.2
     - torchmetrics==0.6.2
     - tqdm==4.62.3
+    - ttach==0.0.3
     - urllib3==1.26.7
     - wandb==0.12.9
     - werkzeug==2.0.2
