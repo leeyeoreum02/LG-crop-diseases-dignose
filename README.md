@@ -5,7 +5,7 @@
 ```shell
 git clone https://github.com/leeyeoreum02/LG-crop-diseases-dignose.git
 cd LG-crop-diseases-dignose
-conda env create -f environments.yaml
+conda env create -f environments.yml
 conda activate lg-crop
 ```
 - Train
