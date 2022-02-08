@@ -3,6 +3,8 @@
 ## Quick Start
 - Setup
 ```shell
+git clone https://github.com/leeyeoreum02/LG-crop-diseases-dignose.git
+cd LG-crop-disease-dignose
 conda env create -f environment.yaml
 conda activate lg-crop
 ```
