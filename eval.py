@@ -19,7 +19,7 @@ from lib.dataset import CustomDataModule
 from lib.utils import initialize_n25, split_data, initialize
 
 
-def get_args() -> argparse.ArgumentParser:
+def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Evaluating Model')
     parser.add_argument('--model_name', type=str)
     parser.add_argument('--weight_path', type=str)

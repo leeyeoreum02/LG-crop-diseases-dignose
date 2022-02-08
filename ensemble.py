@@ -103,7 +103,7 @@ def recover_best() -> None:
     
     effnet_stage1_folds = [
         'submissions/effnetb7nsplus-lstm-w384-h384-f0-aug-sch-e95-tw512-th512-onehot.csv',
-        'submissions/effnetb7nsplus-lstm-w384-h384-f1-aug-sch-swa-e86-tw512-th512-onehot.csv',
+        'submissions/efficientnet_b7_ns_plus_focal_lstm-w384-h384-f1-aug-sch-swa-e99-tw512-th512-onehot.csv',
         'submissions/effnetb7nsplus-lstm-w384-h384-f2-aug-sch-swa-e97-tw512-th512-onehot.csv',
         'submissions/effnetb7nsplus-lstm-w384-h384-f3-aug-sch-e87-tw512-th512-onehot.csv',
         'submissions/effnetb7nsplus-lstm-w384-h384-f4-aug-sch-swa-e97-tw512-th512-onehot.csv',
@@ -111,7 +111,7 @@ def recover_best() -> None:
     sum_folds(submit_dir, effnet_stage1_folds, 'effnet_stage1.csv', label_decoder_111)
     
     effnet_stage2_folds = [
-        'submissions/efficientnet_b7_ns_lstm-w512-h512-f1-aug-e32-tw512-th512-onehot.csv',
+        'submissions/efficientnet_b7_ns_lstm-w512-h512-f1-aug-e38-tw512-th512-onehot.csv',
         'submissions/effnetb7nsplus-lstm-w512-h512-f0-aug-sch-e94-tw600-th600-onehot.csv',
         'submissions/effnetb7nsplus-lstm-w512-h512-f1-aug-sch-e55-tw512-th512-onehot.csv',
         'submissions/effnetb7nsplus-lstm-w512-h512-f1-aug-sch-e55-tw600-th600-onehot.csv',
@@ -120,12 +120,12 @@ def recover_best() -> None:
     
     effnet_stage3_folds = [
         'submissions/effnetb7nsplus-lstm-w384-h384-f0-aug-sch-e95-tw512-th512-onehot.csv',
-        'submissions/effnetb7nsplus-lstm-w384-h384-f1-aug-sch-swa-e86-tw512-th512-onehot.csv',
+        'submissions/efficientnet_b7_ns_plus_focal_lstm-w384-h384-f1-aug-sch-swa-e99-tw512-th512-onehot.csv',
         'submissions/effnetb7nsplus-lstm-w384-h384-f2-aug-sch-swa-e97-tw512-th512-onehot.csv',
         'submissions/effnetb7nsplus-lstm-w384-h384-f3-aug-sch-e87-tw512-th512-onehot.csv',
         'submissions/effnetb7nsplus-lstm-w384-h384-f4-aug-sch-swa-e97-tw512-th512-onehot.csv',
         'submissions/effnetb2nsplus-lstm-w384-h384-f1-aug-sch-swa-e72-tw384-th384-onehot.csv',
-        'submissions/effnetb2nsplus-lstm-w384-h384-f4-aug-sch-swa-s777-e74-tw384-th384-onehot.csv',
+        'submissions/efficientnet_b2_ns_plus_focal_lstm-w384-h384-f0-aug-sch-swa-e74-tw384-th384-onehot.csv',
     ]
     sum_folds(submit_dir, effnet_stage3_folds, 'effnet_stage3.csv', label_decoder_111)
     

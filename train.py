@@ -21,7 +21,7 @@ from lib.dataset import CustomDataModule
 from lib.utils import initialize_n25, split_data, initialize, get_labels
 
 
-def get_args() -> argparse.ArgumentParser:
+def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Training Model')
     parser.add_argument('--model_name', type=str)
     parser.add_argument('--encoding', type=int, default=111)
@@ -243,7 +243,7 @@ def train_fold(
         monitor='val_score',
         dirpath=ckpt_path,
         filename='{epoch}-{val_score:.3f}',
-        save_top_k=5,
+        save_top_k=-1,
         mode='max',
         save_weights_only=True,
     )
@@ -280,11 +280,11 @@ def main() -> None:
     k = 5
     split_kfold(k=k, seed=seed)
 
-    # for fold in range(k):
-    train_fold(
-        f'{args.model_name}-w{args.width}-h{args.height}-f1', 
-        1, args, csv_feature_dict, label_encoder
-    )
+    for fold in range(k):
+        train_fold(
+            f'{args.model_name}-w{args.width}-h{args.height}-f{fold}', 
+            fold, args, csv_feature_dict, label_encoder
+        )
 
 
 if __name__ == '__main__':

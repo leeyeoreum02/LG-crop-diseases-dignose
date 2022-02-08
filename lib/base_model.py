@@ -98,7 +98,7 @@ class BaseModel(LightningModule):
     def configure_optimizers(self) -> Union[Optimizer, Tuple[List[Union[Optimizer, _LRScheduler]]]]:
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
         
-        if self.use_sch:
+        if not self.use_sch:
             return optimizer
         
         scheduler = LinearWarmupCosineAnnealingLR(
