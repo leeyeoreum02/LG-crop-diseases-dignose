@@ -67,6 +67,12 @@ Model from timm, torchvision
 - Custom EfficientNet-B7 + Noisy Student + LSTM, image size 512, test image size 600: Fold 0,1
 - Beit Large P16 + LSTM, image size 384: Fold 0,1,2,3,4
 
+## Training Process
+![](train-process.png)
+
+## Ensemble Process
+![](ensemble-process.png)
+
 ## Environment
 - OS: Ubuntu 18.04.4 LTS (GNU/Linux 4.15.0-162-generic x86_64)
 
